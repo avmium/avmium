@@ -1,0 +1,186 @@
+`ifndef __{{mod.name}}_sv__
+`define __{{mod.name}}_sv__
+
+`include "common/common.svh"
+{%- set seen = [] -%}
+{%- if "if" in mod -%}
+{%- for if in mod.if %}
+{%- set render = '`include "' + if.proto + '/sv/' + if.proto + '_if.svh"' -%}
+{%- if render not in seen %}
+{{render}}
+{% endif -%}
+{%- do seen.append(render) -%}
+{%- endfor -%}
+{%- endif %}
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+{%- set render = '`include "' + port.proto + '/sv/' + port.proto + '_if.svh"' -%}
+{%- if render not in seen %}
+{{render}}
+{%- endif -%}
+{%- do seen.append(render) %}
+`include "{{port.proto}}/sv/{{port.proto}}_{{port.dir}}.sv"
+{%- endfor -%}
+{%- endif -%}
+{%- if "mod" in mod -%}
+{%- for imod in mod.mod %}
+`include "{{imod.type}}/{{imod.type}}.sv"
+{%- endfor -%}
+{%- endif %}
+
+module {{mod.name}}(
+	input clk,
+	input rst_n
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+	,
+	{{port.proto}}_if.{{port.dir}} {{port.name}}
+{%- endfor -%}
+{%- endif %}
+);
+{% for key, value in mod.func.items() %}
+	import "DPI-C" function {% if "resp" in key or "user" in key or "discard" in key or "func" in key or "forward" in key-%}chandle get_{%- else -%}void {% endif -%}{{mod.name}}_{{key}}({%- if "resp" not in key and "user" not in key and "discard" not in key and "func" not in key and "forward" not in key-%}input chandle opaque{%- endif -%});
+{%- endfor %}
+
+	int ret = 0;
+	chandle blk;
+	chandle cb_handle, cb_handle1;
+{%- if "if" in mod -%}
+{{ "\n" }}
+{%- for if in mod.if %}
+	{{if.proto}}_if #(
+	{%- if if.proto == "apb" -%}
+		{%- if "widths" in if -%}
+			{{ if.widths.get("addr", dsw.apb.addr) }}, {{ if.widths.get("data", dsw.apb.data) }}, {{ if.widths.get("user_req", dsw.apb.user_req) }}, {{ if.widths.get("user_data", dsw.apb.user_data) }}, {{ if.widths.get("user_resp", dsw.apb.user_resp) }}
+		{%- else -%}
+		{{ dsw.apb.values() | join(", ") }}
+		{%- endif -%}
+	{%- elif if.proto == "axis" -%}
+		{%- if "widths" in if -%}
+			{{ if.widths.get("tdata", dsw.axis.tdata) }}, {{ if.widths.get("tid", dsw.axis.tid) }}, {{ if.widths.get("tdest", dsw.axis.tdest) }}, {{ if.widths.get("tuser", dsw.axis.tuser) }}
+		{%- else -%}
+		{{ dsw.axis.values() | join(", ") }}
+		{%- endif -%}
+	{%- endif -%}
+	) {{if.name}}( .clk( clk ), .rst_n( rst_n ) );	
+{%- endfor -%}
+{%- endif %}
+{%- if "port" in mod -%}
+{{ "\n" }}
+{%- for port in mod.port %}
+	{{port.proto}}_{{port.dir}} __{{port.name}}__({{port.name}});
+{%- endfor -%}
+{%- endif %}
+{%- if "mod" in mod -%}
+{%- for imod in mod.mod %}
+
+	{{imod.type}} {{imod.name}}(
+		.clk( clk ),
+		.rst_n( rst_n )
+{%- if "conn" in imod -%}
+{%- for key, value in imod.conn.items() -%}
+		,
+		.{{key}}( {{value}}.{{ port_conn[imod.type][key] }} )
+{%- endfor -%}
+{%- endif %}
+	);
+{%- endfor -%}
+{%- endif %}
+
+	initial begin
+		blk = blk_init("{{mod.name}}");
+{%- if "mem" in mod -%}
+{%- for region in mod.mem.region %}
+		ret = mem_init(blk, {{"'h{:x}".format(region.addr)}}, {{region.size}});
+{%- endfor -%}
+{%- endif %}
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+		cb_handle = get_{{mod.name}}_{{port.name}}_resp();
+		cb_handle1 = get_{{mod.name}}_{{port.name}}_user();
+		__{{port.name}}__.port = port_init(blk, "{{port.name}}", {% if "qsize" in port -%}{{port.qsize}}{%- else -%}1{%- endif -%}, {{port.dir | upper}}, {% if "frwd_as_rcvd" in port -%}{{port.frwd_as_rcvd}}{%- else -%}1{%- endif -%}, {% if "addr_normalize" in port -%}{{port.addr_normalize}}{%- else -%}0{%- endif -%}, cb_handle1, cb_handle);
+{%- if "action" in port -%}
+{%- for act in port.action %}
+ 		cb_handle = get_{{mod.name}}_{{port.name}}_{{act.type}}_{{"{:#x}".format(act.start)}}_{{"{:#x}".format(act.end)}}();
+        ret = port_register_action(__{{port.name}}__.port, {{act.type | upper}}, {{"'h{:x}".format(act.start)}}, {{"'h{:x}".format(act.end)}}, cb_handle);
+{%- endfor -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endif %}
+{%- if "memmap" in mod -%}
+{%- if "mem" in mod.memmap -%}
+{%- for mem in mod.memmap.mem %}
+		ret = memmap_init(blk, {{"'h{:x}".format(mem.addr)}}, {{mem.size}}, MEM, 'h0);
+{%- endfor -%}
+{%- endif %}
+{%- if "port" in mod.memmap -%}
+{%- for port in mod.memmap.port %}
+		ret = memmap_init(blk, {{"'h{:x}".format(port.addr)}}, {{port.size}}, PORT, __{{port.bind}}__.port);
+{%- endfor -%}
+{%- endif %}
+{%- endif %}
+		{{mod.name}}_init(blk);
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+		{{mod.name}}_{{port.name}}_init(__{{port.name}}__.port);
+{%- endfor -%}
+{%- endif %}
+	end
+
+{%- if "func" in mod -%}
+{%- for key, value in mod.func.items() -%}
+{%- if value != "callback" %}
+{{ "\n" }}
+{%- set parts = value.split(" ") %}
+	always@( 
+{%- for part in parts -%}
+{%- set split_part = part.split(".") -%}
+{%- if loop.index0 > 0 -%}
+	{{ " or "}}
+{%- endif -%}
+	{{ split_part[1] | replace("pos", "posedge") | replace("neg", "negedge") }} {{split_part[0]}}
+{%- endfor -%}
+	) begin
+		{{mod.name}}_{{key}}( blk );
+	end
+{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+{%- if "func" in port -%}
+{%- for key, value in port.func.items() %}
+	always@( 
+{%- set parts = value.split(" ") -%}
+{%- for part in parts -%}
+{%- set split_part = part.split(".") -%}
+{%- if loop.index0 > 0 -%}
+	{{ " or "}}
+{%- endif -%}
+	{{ split_part[1] | replace("pos", "posedge") | replace("neg", "negedge") }} {{port.name}}.{{split_part[0]}}
+{%- endfor -%}
+	) begin
+		{{mod.name}}_{{port.name}}_{{key}}( __{{port.name}}__.port );
+	end
+{%- endfor -%}
+{%- endif %}
+{%- endfor -%}
+{%- endif %}
+
+	final begin
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+        {{mod.name}}_{{port.name}}_exit(__{{port.name}}__.port);
+{%- endfor -%}
+{%- endif %}
+        {{mod.name}}_exit(blk);
+        blk_deinit(blk);
+	end
+
+	always @(clk) begin
+		route(blk);
+	end
+
+endmodule;
+
+`endif //__{{mod.name}}_sv__

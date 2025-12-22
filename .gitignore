@@ -1,0 +1,45 @@
+# Ignore compiled files and directories
+*tags
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.tar.bz2
+*.rar
+*.tgz
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.o
+# Ignore temporary files and directories
+*.tmp
+*.temp
+*.cache
+*.swp
+*.log
+logs/
+build/
+dist/
+target/
+generated/
+.idea/
+*.iml
+.vscode/
+node_modules/
+bower_components/
+yarn.lock
+package-lock.json
+.env
+# Ignore system files and directories
+.DS_Store
+Thumbs.db
+desktop.ini
+# Ignore IDE files and directories
+.idea
+*.iml
+*.ipr
+*.iws

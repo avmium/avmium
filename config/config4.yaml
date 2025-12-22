@@ -1,0 +1,83 @@
+#         ┌───────────┐
+#         │b_40       │
+#         │           │
+#         │     axism │
+#         └───────┬───┘
+#                 │    
+#         ┌───────▼───┐
+#         │     axiss │
+#         │       ▼   │
+#         │b_41 apbm  │
+#         └───────┬───┘
+#                 │    
+#         ┌───────▼───┐
+#         │     apbs  │
+#         │       ▼   │
+#         │b_42  mem  │
+#         └───────────┘
+---
+config:
+  prj_dir: <path to avmium project>
+  top_dir: <path to the target directory>
+  top: axis_apb
+  sim_clk_cycles: 28
+  wavedump: 1
+---
+def_mod:                                   
+  name: b_40                               
+  port:                                    
+    name: axism                            
+    proto: axis                            
+    dir: master                            
+---                                        
+def_mod:                                   
+  name: b_41                               
+  memmap:                                  
+    port:                                   
+      addr: 0x0                            
+      size: 100
+      bind: apbm
+  port:                                    
+    name: axiss                            
+    proto: axis                            
+    dir: slave                             
+  port:                                    
+    name: apbm                            
+    proto: apb                           
+    dir: master                            
+---                                        
+def_mod:                                   
+  name: b_42                               
+  memmap:
+    mem:
+      addr: 0x0
+      size: 100
+  port:                                    
+    name: apbs                            
+    proto: apb                           
+    dir: slave                           
+---                                        
+def_mod:
+  name: axis_apb
+  if:
+    name: apbif
+    proto: apb
+  if:
+    name: axisif
+    proto: axis
+  mod:
+    name: b40
+    type: b_40
+    conn:
+      axism: axisif
+  mod:
+    name: b41
+    type: b_41
+    conn:
+      axiss: axisif
+      apbm: apbif
+  mod:
+    name: b42
+    type: b_42
+    conn:
+      apbs: apbif

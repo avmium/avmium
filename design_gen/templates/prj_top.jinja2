@@ -1,0 +1,72 @@
+{%- set seen = [] -%}
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+{%- set render = '`include "' + port.proto + '/sv/' + port.proto + '_if.svh"' -%}
+{%- if render not in seen -%}
+{{render}}
+{% endif -%}
+{%- do seen.append(render) %}
+{%- endfor -%}
+{%- endif -%}
+`include "{{mod.name}}.sv"
+
+module prj_top;
+    reg clk;
+    reg rst_n;
+    reg [31:0] counter;
+
+    initial begin
+		$dumpfile("sv_waveform.vcd");
+    	$dumpvars(0, prj_top);
+        clk = '0;
+        rst_n = '0;
+        counter = '0;
+    end
+
+    always @(posedge clk) begin
+`ifdef SIM_CLK_CYCLES
+        if(counter >= `SIM_CLK_CYCLES) begin
+            $finish;
+        end
+        else
+`endif
+		if(counter == 2) begin
+            rst_n <= 1;
+        end
+        counter <= counter + 1;
+    end
+
+    always #1 clk = ~clk;
+
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+    {{port.proto}}_if #(
+	{%- if port.proto == "apb" -%}
+		{%- if "widths" in port -%}
+			{{ port.widths.get("addr", dsw.apb.addr) }}, {{ port.widths.get("data", dsw.apb.data) }}, {{ port.widths.get("user_req", dsw.apb.user_req) }}, {{ port.widths.get("user_data", dsw.apb.user_data) }}, {{ port.widths.get("user_resp", dsw.apb.user_resp) }}
+		{%- else -%}
+		{{ dsw.apb.values() | join(", ") }}
+		{%- endif -%}
+	{%- elif port.proto == "axis" -%}
+		{%- if "widths" in port -%}
+			{{ port.widths.get("tdata", dsw.axis.tdata) }}, {{ port.widths.get("tid", dsw.axis.tid) }}, {{ port.widths.get("tdest", dsw.axis.tdest) }}, {{ port.widths.get("tuser", dsw.axis.tuser) }}
+		{%- else -%}
+		{{ dsw.axis.values() | join(", ") }}
+		{%- endif -%}
+	{%- endif -%}
+	) __{{port.name}}__( .clk ( clk ), .rst_n( rst_n ) );
+{%- endfor -%}
+{%- endif %}
+
+    {{mod.name}} {{mod.name}}_0 (
+        .clk( clk ),
+        .rst_n( rst_n )
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+        ,
+        .{{port.name}}( __{{port.name}}__.{{ port_conn[mod.name][port.name] }} )
+{%- endfor -%}
+{%- endif %}
+    );
+
+endmodule

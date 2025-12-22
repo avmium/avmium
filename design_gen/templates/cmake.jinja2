@@ -1,0 +1,118 @@
+cmake_minimum_required(VERSION 3.12)
+
+if(DEFINED ENV{CONFIG_FILE})
+	set(CONFIG_FILE $ENV{CONFIG_FILE})
+else()
+	if(NOT DEFINED CONFIG_FILE)
+		set(CONFIG_FILE ${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake)
+	endif()
+endif()
+
+include(${CONFIG_FILE})
+if(NOT DEFINED CUSTOM_COMPILE_OPTIONS)
+	set(CUSTOM_COMPILE_OPTIONS 1)
+	add_compile_definitions(
+		SIM_CLK_CYCLES=${SIM_CLK_CYCLES}
+		WAVEDUMP=${WAVEDUMP}
+	)
+endif()
+
+{%- if "mod" in mod -%}
+{{"\n"}}
+{%- set seen = [] -%}
+{%- for mod in mod.mod -%}
+{%- if mod.type not in seen %}
+add_subdirectory({{mod.type}})
+{%- endif -%}
+{%- do seen.append(mod.type) -%}
+{%- endfor -%}
+{%- endif %}
+
+set(
+	INCS
+	${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+set(
+    SRCS
+    ${CMAKE_CURRENT_SOURCE_DIR}/{{mod.name}}.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/{{mod.name}}_port_actions.c
+)
+
+add_library(
+	{{mod.name}} STATIC
+        ${SRCS}
+)
+
+target_include_directories(
+    {{mod.name}} PUBLIC
+		${INCS}
+)
+
+target_link_libraries(
+    {{mod.name}} PUBLIC
+		common
+{%- set seen = [] -%}
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+{%- if port.proto not in seen %}
+		{{port.proto}}sc
+{%- endif -%}
+{%- do seen.append(port.proto) -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if "if" in mod -%}
+{%- for if in mod.if -%}
+{%- if if.proto not in seen %}
+		{{if.proto}}sc
+{%- endif -%}
+{%- do seen.append(if.proto) -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if "mod" in mod -%}
+{%- for mod in mod.mod -%}
+{%- if mod.type not in seen %}
+		{{mod.type}}
+{%- endif -%}
+{%- do seen.append(mod.type) -%}
+{%- endfor -%}
+{%- endif %}
+)
+
+add_executable(sc_{{mod.name}}
+	${PRJ_DIR}/common/src/sc_main.cpp
+)
+
+target_link_libraries(sc_{{mod.name}} PUBLIC
+	SystemC::systemc
+	{{mod.name}}
+)
+
+target_compile_options(sc_{{mod.name}} PRIVATE
+	-DTOP={{mod.name}}
+)
+
+add_executable(sv_{{mod.name}}
+	${PRJ_DIR}/common/src/sv_main.cpp
+)
+
+target_link_libraries(sv_{{mod.name}} PUBLIC
+	{{mod.name}}
+)
+
+verilate (sv_{{mod.name}}
+	SOURCES
+		${CMAKE_CURRENT_SOURCE_DIR}/prj_top.v
+	TRACE_VCD
+	TOP_MODULE prj_top
+	VERILATOR_ARGS
+		-Wno-lint
+		--timing
+		+incdir+${PRJ_DIR}
+		+incdir+${TOP_DIR}
+		+incdir+${CMAKE_CURRENT_SOURCE_DIR}
+		-DWAVEDUMP=${WAVEDUMP}
+{%- if conf.sim_clk_cycles > 0 %}
+		-DSIM_CLK_CYCLES=${SIM_CLK_CYCLES}
+{%- endif %}
+)

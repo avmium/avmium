@@ -1,0 +1,52 @@
+#         ┌───────────┐
+#         │b_10       │
+#         │           │
+#         │     axism │
+#         └───────┬───┘
+#                 │    
+#         ┌───────▼───┐
+#         │     axiss │
+#         │       ▼   │
+#         │b_11  mem  │
+#         └───────────┘
+---
+config:
+  prj_dir: <path to avmium project>
+  top_dir: <path to the target directory>
+  top: axis_axis
+  sim_clk_cycles: 28
+  wavedump: 1
+---
+def_mod:                                   
+  name: b_20                               
+  port:                                    
+    name: axism                            
+    proto: axis                            
+    dir: master                            
+---                                        
+def_mod:                                   
+  name: b_21                               
+  memmap:                                  
+    mem:                                   
+      addr: 0x0                            
+      size: 100                            
+  port:                                    
+    name: axiss                            
+    proto: axis                            
+    dir: slave                             
+---                                        
+def_mod:
+  name: axis_axis
+  if:
+    name: axisif
+    proto: axis
+  mod:
+    name: b20
+    type: b_20
+    conn:
+      axism: axisif
+  mod:
+    name: b21
+    type: b_21
+    conn:
+      axiss: axisif

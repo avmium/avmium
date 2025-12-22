@@ -1,0 +1,220 @@
+#ifndef __{{mod.name}}_h__
+#define __{{mod.name}}_h__
+
+#include "common.h"
+{% set seen = [] -%}
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+{%- set render = '#include "' + port.proto + '_' + port.dir + '.h"' -%}
+{%- if render not in seen -%}
+{{render}}
+{% endif -%}
+{%- do seen.append(render) -%}
+{%- endfor -%}
+{%- endif -%}
+
+{% if "if" in mod %}
+{%- for if in mod.if -%}
+{%- set render = '#include "' + if.proto + '_if.h"' -%}
+{%- if render not in seen -%}
+{{render}}
+{% endif -%}
+{%- do seen.append(render) -%}
+{%- endfor -%}
+{%- endif -%}
+
+{% if "mod" in mod %}
+{%- for mod in mod.mod -%}
+{%- set render = '#include "' + mod.type + '.h"' -%}
+{%- if render not in seen -%}
+{{render}}
+{% endif -%}
+{%- do seen.append(render) -%}
+{%- endfor -%}
+{%- endif %}
+
+{%- if "func" in mod %}
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+{% for key, value in mod.func.items() -%}
+void {{mod.name}}_{{key}}(void *);
+{% endfor %}
+#ifdef __cplusplus
+}
+#endif
+{%- endif %}
+
+SC_MODULE( {{mod.name}} )
+{
+    /* Clock and Reset */
+    sc_in<bool>     clk;
+    sc_in<sc_logic> rst_n;
+
+    struct blk *blk = NULL;
+
+{%- if "port" in mod -%}
+    {%- for port in mod.port %}
+    {{port.proto}}::{{port.dir}}<
+	{%- if port.proto == "apb" -%}
+		{%- if "widths" in port -%}
+			{{ port.widths.get("addr", dsw.apb.addr) }}, {{ port.widths.get("data", dsw.apb.data) }}, {{ port.widths.get("user_req", dsw.apb.user_req) }}, {{ port.widths.get("user_data", dsw.apb.user_data) }}, {{ port.widths.get("user_resp", dsw.apb.user_resp) }}
+		{%- else -%}
+		{{ dsw.apb.values() | join(", ") }}
+		{%- endif -%}
+	{%- elif port.proto == "axis" -%}
+		{%- if "widths" in port -%}
+			{{ port.widths.get("tdata", dsw.axis.tdata) }}, {{ port.widths.get("tid", dsw.axis.tid) }}, {{ port.widths.get("tdest", dsw.axis.tdest) }}, {{ port.widths.get("tuser", dsw.axis.tuser) }}
+		{%- else -%}
+		{{ dsw.axis.values() | join(", ") }}
+		{%- endif -%}
+	{%- endif -%}
+	> {{port.name}};
+    {%- endfor -%}
+{%- endif %}
+    
+{%- if "if" in mod -%}
+{%- for if in mod.if %}
+    {{if.proto}}_if<
+	{%- if if.proto == "apb" -%}
+		{%- if "widths" in if -%}
+			{{ if.widths.get("addr", dsw.apb.addr) }}, {{ if.widths.get("data", dsw.apb.data) }}, {{ if.widths.get("user_req", dsw.apb.user_req) }}, {{ if.widths.get("user_data", dsw.apb.user_data) }}, {{ if.widths.get("user_resp", dsw.apb.user_resp) }}
+		{%- else -%}
+		{{ dsw.apb.values() | join(", ") }}
+		{%- endif -%}
+	{%- elif if.proto == "axis" -%}
+		{%- if "widths" in if -%}
+			{{ if.widths.get("tdata", dsw.axis.tdata) }}, {{ if.widths.get("tid", dsw.axis.tid) }}, {{ if.widths.get("tdest", dsw.axis.tdest) }}, {{ if.widths.get("tuser", dsw.axis.tuser) }}
+		{%- else -%}
+		{{ dsw.axis.values() | join(", ") }}
+		{%- endif -%}
+	{%- endif -%}
+	> {{if.name}};
+    {%- endfor -%}
+{%- endif %}
+
+{%- if "mod" in mod -%}
+    {%- for blk in mod.mod %}
+    {{blk.type}} {{blk.name}};
+    {%- endfor -%}
+{%- endif %}
+
+    SC_HAS_PROCESS({{mod.name}});
+    explicit {{mod.name}}(sc_module_name name, sc_trace_file *file = NULL) : sc_module(name),
+    clk("clk"), rst_n("rst_n")
+{%- if "port" in mod -%}
+    {%- for port in mod.port -%}
+    ,
+    {{port.name}}("{{port.name}}", file)    
+    {%- endfor -%}
+{% endif %}
+{%- if "if" in mod -%}
+    {%- for if in mod.if -%}
+    ,
+    {{if.name}}("{{if.name}}", file, clk, rst_n)    
+    {%- endfor -%}
+{% endif %}
+{%- if "mod" in mod -%}
+    {%- for blk in mod.mod -%}
+    ,
+    {{blk.name}}("{{blk.name}}", file)    
+    {%- endfor -%}
+{% endif %}
+    {
+#if WAVEDUMP
+        sc_trace(file, clk,   clk.name());
+        sc_trace(file, rst_n, rst_n.name());
+#endif
+        blk = blk_init("{{mod.name}}");
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+        {{port.name}}.port = port_init(blk, "{{port.name}}", {% if "qsize" in port -%}{{port.qsize}}{%- else -%}1{%- endif -%}, {{port.dir | upper}}, {% if "frwd_as_rcvd" in port -%}{{port.frwd_as_rcvd}}{%- else -%}1{%- endif -%}, {% if "addr_normalize" in port -%}{{port.addr_normalize}}{%- else -%}0{%- endif -%}, {{mod.name}}_{{port.name}}_user, {{mod.name}}_{{port.name}}_resp);
+{%- if "action" in port -%}
+    {%- for act in port.action %}
+        port_register_action({{port.name}}.port, {{act.type | upper}}, {{"{:#x}".format(act.start)}}, {{"{:#x}".format(act.end)}}, {{mod.name}}_{{port.name}}_{{act.type}}_{{"{:#x}".format(act.start)}}_{{"{:#x}".format(act.end)}});
+    {%- endfor -%}
+{%- endif -%}
+{%- endfor -%}
+{%- endif %}
+{%- if "memmap" in mod -%}
+{%- if "mem" in mod.memmap -%}
+{%- for mem in mod.memmap.mem %}
+		memmap_init(blk, {{"{:#x}".format(mem.addr)}}, {{mem.size}}, MEM, NULL);
+{%- endfor -%}
+{%- endif %}
+{%- if "port" in mod.memmap -%}
+{%- for port in mod.memmap.port %}
+		memmap_init(blk, {{"{:#x}".format(port.addr)}}, {{port.size}}, PORT, {{port.bind}}.port);
+{%- endfor -%}
+{%- endif %}
+{%- endif %}
+{%- if "mod" in mod -%}
+    {%- for blk in mod.mod %}
+        {{blk.name}}.clk( clk );
+        {{blk.name}}.rst_n( rst_n );
+       {%- if "conn" in blk -%}
+            {%- for key, value in blk.conn.items() %}
+        {{blk.name}}.{{key}}( {{value}} );
+            {% endfor -%}
+       {% endif -%}
+    {%- endfor -%}
+{%- endif %}
+{%- if "func" in mod -%}
+        {% for key, value in mod.func.items() %}
+        {%- if value != "callback" %}
+        SC_METHOD( sc_{{key}} );
+        sensitive <<  {{ value | replace(" ", " << ") | replace("pos", "pos()") | replace("neg", "neg()") }};
+        dont_initialize();
+        {%- endif -%}
+        {%- endfor -%}
+{%- endif %}
+        {{mod.name}}_init(blk);
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+{%- if "func" in port -%}
+{%- for key, value in port.func.items() %}
+        SC_METHOD( sc_{{port.name}}_{{key}} );
+        sensitive << {{port.name}}.{{ value | replace(" ", " << ") | replace("pos", "pos()") | replace("neg", "neg()") }};
+        dont_initialize();
+{%- endfor -%}
+{%- endif %}
+        {{mod.name}}_{{port.name}}_init({{port.name}}.port);
+{%- endfor -%}
+{%- endif %}
+
+        SC_METHOD( sc_route );
+        sensitive << clk;
+    }
+
+    ~{{mod.name}}()
+    {
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+        {{mod.name}}_{{port.name}}_exit({{port.name}}.port);
+{%- endfor -%}
+{%- endif %}
+        {{mod.name}}_exit(blk);
+        blk_deinit(blk);
+    }
+
+	void sc_route() { route(blk); }
+{%- if "func" in mod %}
+    {% for key, value in mod.func.items() %}
+    {%- if value != "callback" %}
+    void sc_{{key}}() { {{mod.name}}_{{key}}( blk ); }
+    {%- endif -%}
+    {%- endfor -%}
+{%- endif %}
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+{%- if "func" in port -%}
+{%- for key, value in port.func.items() %}
+    void sc_{{port.name}}_{{key}}() { {{mod.name}}_{{port.name}}_{{key}}( {{port.name}}.port ); }
+{%- endfor -%}
+{%- endif %}
+{%- endfor -%}
+{%- endif %}
+};
+
+#endif /*__{{mod.name}}_h__*/

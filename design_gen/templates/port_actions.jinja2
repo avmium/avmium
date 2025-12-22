@@ -1,0 +1,10 @@
+{%- for key, value in mod.func.items() -%}
+{%- if "resp" in key or "user" in key or "discard" in key or "func" in key or "forward" in key %}
+
+void {{mod.name}}_{{key}}(void *opaque);
+void* get_{{mod.name}}_{{key}}()
+{
+	return {{mod.name}}_{{key}};
+}
+{%- endif -%}
+{%- endfor -%}

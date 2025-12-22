@@ -1,0 +1,66 @@
+#ifndef __{{mod.name}}_top_h__
+#define __{{mod.name}}_top_h__
+
+#include "common.h"
+{%- set seen = [] -%}
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+{%- set render = '#include "' + port.proto + '_if.h"' -%}
+{%- if render not in seen %}
+{{render}}
+{%- endif -%}
+{%- do seen.append(render) %}
+{%- endfor -%}
+{%- endif %}
+#include "{{mod.name}}.h"
+
+SC_MODULE( {{mod.name}}_top )
+{
+    /* Clock and Reset */
+    sc_in<bool>     clk;
+    sc_in<sc_logic> rst_n;
+
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+    {{port.proto}}_if<
+	{%- if port.proto == "apb" -%}
+		{%- if "widths" in port -%}
+			{{ port.widths.get("addr", dsw.apb.addr) }}, {{ port.widths.get("data", dsw.apb.data) }}, {{ port.widths.get("user_req", dsw.apb.user_req) }}, {{ port.widths.get("user_data", dsw.apb.user_data) }}, {{ port.widths.get("user_resp", dsw.apb.user_resp) }}
+		{%- else -%}
+		{{ dsw.apb.values() | join(", ") }}
+		{%- endif -%}
+	{%- elif port.proto == "axis" -%}
+		{%- if "widths" in port -%}
+			{{ port.widths.get("tdata", dsw.axis.tdata) }}, {{ port.widths.get("tid", dsw.axis.tid) }}, {{ port.widths.get("tdest", dsw.axis.tdest) }}, {{ port.widths.get("tuser", dsw.axis.tuser) }}
+		{%- else -%}
+		{{ dsw.axis.values() | join(", ") }}
+		{%- endif -%}
+	{%- endif -%}
+	> __{{port.name}}__;
+{%- endfor -%}
+{%- endif %}
+    
+    {{mod.name}} __{{mod.name}}__;
+
+    SC_HAS_PROCESS( {{mod.name}}_top );
+    explicit {{mod.name}}_top(sc_module_name name, sc_trace_file *file = NULL) : sc_module(name)
+{%- if "port" in mod -%}
+{%- for port in mod.port -%}
+    ,
+    __{{port.name}}__("__{{port.name}}__", file, clk, rst_n)
+{%- endfor -%}
+{%- endif %},
+    __{{mod.name}}__("__{{mod.name}}__", file)
+    {
+        __{{mod.name}}__.clk( clk );
+        __{{mod.name}}__.rst_n( rst_n );
+{%- if "port" in mod -%}
+{%- for port in mod.port %}
+        __{{mod.name}}__.{{port.name}}( __{{port.name}}__ );
+{%- endfor -%}
+{%- endif %}
+    }
+
+};
+
+#endif // __{{mod.name}}_top_h__
